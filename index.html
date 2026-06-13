@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f0f0f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Reminders">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <title>Reminders</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f0f;
+      color: #fff;
+      min-height: 100dvh;
+    }
+
+    .app {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 52px 20px 36px;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    h1 {
+      font-size: 34px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 6px;
+    }
+
+    h1 .accent { color: #7c3aed; }
+
+    .subtitle {
+      font-size: 14px;
+      color: #555;
+      margin-bottom: 36px;
+    }
+
+    .form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 36px;
+    }
+
+    textarea {
+      width: 100%;
+      background: #1c1c1c;
+      border: 1.5px solid #2a2a2a;
+      border-radius: 16px;
+      color: #fff;
+      font-size: 16px;
+      font-family: inherit;
+      padding: 14px 16px;
+      resize: none;
+      height: 74px;
+      outline: none;
+      transition: border-color 0.15s;
+      line-height: 1.4;
+    }
+
+    textarea:focus { border-color: #7c3aed; }
+    textarea::placeholder { color: #444; }
+
+    .add-btn {
+      background: #7c3aed;
+      color: #fff;
+      border: none;
+      border-radius: 16px;
+      padding: 15px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .add-btn:active { opacity: 0.85; transform: scale(0.98); }
+
+    .banner {
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: none;
+      line-height: 1.4;
+    }
+
+    .banner.visible { display: block; }
+    .banner.warn { background: #1c1500; border: 1.5px solid #f59e0b; color: #f59e0b; }
+    .banner.ok   { background: #001c0a; border: 1.5px solid #22c55e; color: #22c55e; }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: #444;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 10px;
+    }
+
+    .list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .item {
+      background: #1c1c1c;
+      border: 1.5px solid #2a2a2a;
+      border-radius: 16px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      animation: enter 0.18s ease;
+    }
+
+    @keyframes enter {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0);    }
+    }
+
+    .item-body { flex: 1; min-width: 0; }
+
+    .item-text {
+      font-size: 16px;
+      line-height: 1.4;
+      color: #fff;
+      word-break: break-word;
+    }
+
+    .item-time {
+      font-size: 12px;
+      color: #444;
+      margin-top: 4px;
+    }
+
+    .x-btn {
+      background: none;
+      border: none;
+      color: #3a3a3a;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      padding: 3px 5px;
+      border-radius: 6px;
+      flex-shrink: 0;
+      margin-top: 1px;
+      transition: color 0.15s, background 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .x-btn:hover, .x-btn:active {
+      color: #ef4444;
+      background: rgba(239, 68, 68, 0.12);
+    }
+
+    .empty {
+      text-align: center;
+      color: #2a2a2a;
+      padding: 52px 0;
+      user-select: none;
+    }
+
+    .empty-icon { font-size: 52px; margin-bottom: 10px; }
+    .empty-text { font-size: 15px; }
+
+    .install-hint {
+      margin-top: auto;
+      padding-top: 28px;
+      font-size: 12px;
+      color: #333;
+      text-align: center;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <h1>Re<span class="accent">mind</span>ers</h1>
+  <p class="subtitle">Stays on your lock screen until you dismiss it</p>
+
+  <div class="banner" id="banner"></div>
+
+  <div class="form">
+    <textarea id="input" placeholder="e.g. eat food by 3pm" maxlength="200"></textarea>
+    <button class="add-btn" id="addBtn">Add Reminder</button>
+  </div>
+
+  <div class="section-label" id="activeLabel" hidden>Active</div>
+  <div class="list" id="list"></div>
+
+  <p class="install-hint" id="installHint" hidden>
+    Add this page to your Home Screen for the best experience.<br>
+    Safari → Share → Add to Home Screen
+  </p>
+</div>
+
+<script>
+const STORE = 'reminders-v1';
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(STORE) || '[]'); }
+  catch { return []; }
+}
+
+function save(items) {
+  localStorage.setItem(STORE, JSON.stringify(items));
+}
+
+function timeStr(ts) {
+  return new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function esc(s) {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function render(items) {
+  const list = document.getElementById('list');
+  const label = document.getElementById('activeLabel');
+
+  if (!items.length) {
+    label.hidden = true;
+    list.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">🔔</div>
+        <div class="empty-text">No reminders</div>
+      </div>`;
+    return;
+  }
+
+  label.hidden = false;
+  list.innerHTML = items.map(r => `
+    <div class="item" id="r${r.id}">
+      <div class="item-body">
+        <div class="item-text">${esc(r.text)}</div>
+        <div class="item-time">Added ${timeStr(r.createdAt)}</div>
+      </div>
+      <button class="x-btn" data-id="${r.id}" title="Dismiss">✕</button>
+    </div>
+  `).join('');
+}
+
+async function dismiss(id) {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const notes = await reg.getNotifications({ tag: id });
+    notes.forEach(n => n.close());
+  } catch {}
+
+  const items = load().filter(r => r.id !== id);
+  save(items);
+  render(items);
+}
+
+async function syncWithNotifications() {
+  if (!('serviceWorker' in navigator)) { render(load()); return; }
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const active = await reg.getNotifications();
+    const tags = new Set(active.map(n => n.tag));
+    const items = load();
+    const synced = items.filter(r => tags.has(r.id));
+    if (synced.length !== items.length) save(synced);
+    render(synced.length !== items.length ? synced : items);
+  } catch {
+    render(load());
+  }
+}
+
+function showBanner(msg, type = 'warn') {
+  const el = document.getElementById('banner');
+  el.textContent = msg;
+  el.className = `banner visible ${type}`;
+}
+
+function hideBanner() {
+  document.getElementById('banner').classList.remove('visible');
+}
+
+async function addReminder() {
+  const input = document.getElementById('input');
+  const text = input.value.trim();
+  if (!text) { input.focus(); return; }
+
+  if (!('serviceWorker' in navigator) || !('Notification' in window)) {
+    showBanner('Notifications are not supported in this browser.');
+    return;
+  }
+
+  let perm = Notification.permission;
+  if (perm === 'default') perm = await Notification.requestPermission();
+
+  if (perm !== 'granted') {
+    showBanner('Notifications are blocked. Enable them in your browser or system settings.');
+    return;
+  }
+
+  hideBanner();
+
+  const id = Date.now().toString();
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification(text, {
+      requireInteraction: true,
+      tag: id,
+      icon: './icon.svg',
+      badge: './icon.svg',
+      vibrate: [100, 50, 100]
+    });
+  } catch (err) {
+    showBanner('Could not show notification. Try refreshing the page.');
+    return;
+  }
+
+  const items = [...load(), { id, text, createdAt: Date.now() }];
+  save(items);
+  render(items);
+  input.value = '';
+  input.focus();
+}
+
+// Register service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js')
+    .then(() => syncWithNotifications())
+    .catch(() => render(load()));
+
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data?.type === 'DISMISSED') {
+      const items = load().filter(r => r.id !== e.data.id);
+      save(items);
+      render(items);
+    }
+  });
+} else {
+  render(load());
+}
+
+// Show install hint when not running as installed PWA
+if (!window.matchMedia('(display-mode: standalone)').matches && !navigator.standalone) {
+  document.getElementById('installHint').hidden = false;
+}
+
+document.getElementById('addBtn').addEventListener('click', addReminder);
+
+document.getElementById('input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addReminder(); }
+});
+
+document.getElementById('list').addEventListener('click', (e) => {
+  const btn = e.target.closest('.x-btn');
+  if (btn) dismiss(btn.dataset.id);
+});
+
+// Sync when returning to the app (catches notifications dismissed while app was closed)
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) syncWithNotifications();
+});
+</script>
+</body>
+</html>
