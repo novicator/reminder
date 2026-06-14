@@ -11,7 +11,8 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'Time must be in the future' });
   }
 
-  const baseUrl = process.env.API_BASE_URL || `https://${process.env.VERCEL_URL}`;
+  let baseUrl = process.env.API_BASE_URL || `https://${process.env.VERCEL_URL}`;
+  if (!baseUrl.startsWith('http')) baseUrl = `https://${baseUrl}`;
   const sendUrl = `${baseUrl}/api/send`;
   const notBefore = Math.floor(scheduledTime / 1000);
 
