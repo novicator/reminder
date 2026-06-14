@@ -24,7 +24,6 @@ self.addEventListener('notificationclick', (e) => {
   e.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
       for (const c of list) {
-        c.postMessage({ type: 'DISMISSED', id: e.notification.tag });
         if ('focus' in c) return c.focus();
       }
       return clients.openWindow('./');
@@ -33,7 +32,16 @@ self.addEventListener('notificationclick', (e) => {
 });
 
 self.addEventListener('notificationclose', (e) => {
+  const reminderId = e.notification.tag;
+
+  // Swiping away = done, cancel the repeat
+  fetch('/api/cancel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reminderId }),
+  }).catch(() => {});
+
   clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-    for (const c of list) c.postMessage({ type: 'DISMISSED', id: e.notification.tag });
+    for (const c of list) c.postMessage({ type: 'DISMISSED', id: reminderId });
   });
 });

@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "@upstash/qstash": "^2.7.0",
+    "@upstash/redis": "^1.28.0",
     "web-push": "^3.6.7"
   }
 }

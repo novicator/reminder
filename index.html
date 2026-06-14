@@ -338,13 +338,13 @@ async function dismiss(id) {
   const reminder = items.find(r => r.id === id);
   if (!reminder) return;
 
-  if (reminder.status === 'pending' && reminder.messageId) {
-    fetch('/api/cancel', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageId: reminder.messageId }),
-    }).catch(() => {});
-  } else if (reminder.status === 'active') {
+  fetch('/api/cancel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reminderId: id }),
+  }).catch(() => {});
+
+  if (reminder.status === 'active') {
     try {
       const reg = await navigator.serviceWorker.ready;
       const notes = await reg.getNotifications({ tag: id });

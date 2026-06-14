@@ -1,4 +1,5 @@
 const { Client } = require('@upstash/qstash');
+const { Redis } = require('@upstash/redis');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
@@ -21,6 +22,13 @@ module.exports = async function handler(req, res) {
       body: { id, text, subscription },
       notBefore: Math.floor(scheduledTime / 1000),
     });
+
+    const redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+
+    await redis.set(`reminder:${id}`, result.messageId, { ex: 60 * 60 * 24 * 30 });
 
     res.status(200).json({ messageId: result.messageId });
   } catch (err) {
