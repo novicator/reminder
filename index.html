@@ -420,7 +420,7 @@ async function addReminder() {
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      throw new Error(`${response.status}: ${errData.error || 'unknown error'}`);
+      throw new Error(`${response.status}: ${JSON.stringify(errData)}`);
     }
 
     const { messageId } = await response.json();
