@@ -23,7 +23,7 @@
     .app {
       max-width: 480px;
       margin: 0 auto;
-      padding: 52px 20px 36px;
+      padding: 80px 20px 36px;
       min-height: 100dvh;
       display: flex;
       flex-direction: column;
@@ -115,7 +115,8 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    .add-btn:active { opacity: 0.85; transform: scale(0.98); }
+    .add-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .add-btn:not(:disabled):active { opacity: 0.85; transform: scale(0.98); }
 
     .banner {
       border-radius: 12px;
@@ -157,9 +158,7 @@
       animation: enter 0.18s ease;
     }
 
-    .item.active {
-      border-color: #3d2d6e;
-    }
+    .item.active { border-color: #3d2d6e; }
 
     @keyframes enter {
       from { opacity: 0; transform: translateY(-6px); }
@@ -181,9 +180,7 @@
       margin-top: 4px;
     }
 
-    .item-meta.is-active {
-      color: #7c3aed;
-    }
+    .item-meta.is-active { color: #7c3aed; }
 
     .x-btn {
       background: none;
@@ -250,6 +247,9 @@
 </div>
 
 <script>
+// ── Replace this with your actual VAPID public key ──
+const VAPID_PUBLIC_KEY = 'zsVATkabJWxtSd-HnH75r1IwIr4aO2fBvZYFnJPytTU';
+
 const STORE = 'reminders-v1';
 
 function load() {
@@ -273,7 +273,6 @@ function formatWhen(ts) {
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const targetStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-
   if (targetStart === todayStart) return `today at ${time}`;
   if (targetStart === todayStart + 86400000) return `tomorrow at ${time}`;
   return d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }) + ` at ${time}`;
@@ -315,14 +314,37 @@ function render(items) {
   }).join('');
 }
 
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return new Uint8Array([...rawData].map(c => c.charCodeAt(0)));
+}
+
+async function subscribeToPush() {
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+  }
+  return sub;
+}
+
 async function dismiss(id) {
   const items = load();
   const reminder = items.find(r => r.id === id);
   if (!reminder) return;
 
-  if (reminder.status === 'pending') {
-    navigator.serviceWorker.controller?.postMessage({ type: 'CANCEL', id });
-  } else {
+  if (reminder.status === 'pending' && reminder.messageId) {
+    fetch('/api/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messageId: reminder.messageId }),
+    }).catch(() => {});
+  } else if (reminder.status === 'active') {
     try {
       const reg = await navigator.serviceWorker.ready;
       const notes = await reg.getNotifications({ tag: id });
@@ -348,6 +370,7 @@ function hideBanner() {
 async function addReminder() {
   const input = document.getElementById('input');
   const timeInput = document.getElementById('timeInput');
+  const btn = document.getElementById('addBtn');
   const text = input.value.trim();
 
   if (!text) { input.focus(); return; }
@@ -375,46 +398,51 @@ async function addReminder() {
   }
 
   hideBanner();
+  btn.disabled = true;
+  btn.textContent = 'Scheduling…';
 
-  const id = Date.now().toString();
-  const reminder = { id, text, scheduledTime, createdAt: Date.now(), status: 'pending' };
+  try {
+    const subscription = await subscribeToPush();
+    const id = Date.now().toString();
 
-  const reg = await navigator.serviceWorker.ready;
-  reg.active?.postMessage({ type: 'SCHEDULE', reminder });
+    const response = await fetch('/api/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, text, scheduledTime, subscription }),
+    });
 
-  const items = [...load(), reminder];
-  save(items);
-  render(items);
+    if (!response.ok) throw new Error('Server error');
 
-  input.value = '';
-  showBanner(`Reminder set for ${formatWhen(scheduledTime)}`, 'ok');
+    const { messageId } = await response.json();
+    const reminder = { id, text, scheduledTime, createdAt: Date.now(), status: 'pending', messageId };
+
+    const items = [...load(), reminder];
+    save(items);
+    render(items);
+
+    input.value = '';
+    showBanner(`Reminder set for ${formatWhen(scheduledTime)}`, 'ok');
+  } catch (err) {
+    showBanner('Failed to schedule. Check your connection and try again.');
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Schedule Reminder';
+  }
 }
 
 async function syncState() {
   if (!('serviceWorker' in navigator)) { render(load()); return; }
-
   try {
     const reg = await navigator.serviceWorker.ready;
     const activeNotes = await reg.getNotifications();
     const activeTags = new Set(activeNotes.map(n => n.tag));
 
     let items = load();
-
-    // Mark fired items as active if their notification is showing
     items = items.map(r =>
       r.status === 'pending' && activeTags.has(r.id) ? { ...r, status: 'active' } : r
     );
-
-    // Drop active items whose notification was dismissed while app was closed
     items = items.filter(r => r.status !== 'active' || activeTags.has(r.id));
-
-    // Re-send pending reminders to the SW in case it restarted and lost its timers
-    const pending = items.filter(r => r.status === 'pending');
-    if (pending.length > 0 && reg.active) {
-      for (const r of pending) {
-        reg.active.postMessage({ type: 'SCHEDULE', reminder: r });
-      }
-    }
 
     save(items);
     render(items);
@@ -446,16 +474,13 @@ if ('serviceWorker' in navigator) {
 }
 
 // Set datetime input defaults
-const minTime = toLocalDT(Date.now());
+const timeInput = document.getElementById('timeInput');
+timeInput.min = toLocalDT(Date.now());
 const defaultTime = new Date();
 defaultTime.setHours(defaultTime.getHours() + 1);
 defaultTime.setMinutes(Math.ceil(defaultTime.getMinutes() / 15) * 15, 0, 0);
-
-const timeInput = document.getElementById('timeInput');
-timeInput.min = minTime;
 timeInput.value = toLocalDT(defaultTime);
 
-// Show install hint if not running as installed PWA
 if (!window.matchMedia('(display-mode: standalone)').matches && !navigator.standalone) {
   document.getElementById('installHint').hidden = false;
 }
