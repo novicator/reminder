@@ -36,8 +36,6 @@
       margin-bottom: 6px;
     }
 
-    h1 .accent { color: #7c3aed; }
-
     .subtitle {
       font-size: 14px;
       color: #555;
@@ -69,6 +67,40 @@
 
     textarea:focus { border-color: #7c3aed; }
     textarea::placeholder { color: #444; }
+
+    .time-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #1c1c1c;
+      border: 1.5px solid #2a2a2a;
+      border-radius: 16px;
+      padding: 12px 16px;
+      transition: border-color 0.15s;
+    }
+
+    .time-row:focus-within { border-color: #7c3aed; }
+
+    .time-row label {
+      font-size: 13px;
+      color: #666;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      flex-shrink: 0;
+    }
+
+    input[type="datetime-local"] {
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      flex: 1;
+      min-width: 0;
+      color-scheme: dark;
+    }
 
     .add-btn {
       background: #7c3aed;
@@ -125,6 +157,10 @@
       animation: enter 0.18s ease;
     }
 
+    .item.active {
+      border-color: #3d2d6e;
+    }
+
     @keyframes enter {
       from { opacity: 0; transform: translateY(-6px); }
       to   { opacity: 1; transform: translateY(0);    }
@@ -139,10 +175,14 @@
       word-break: break-word;
     }
 
-    .item-time {
+    .item-meta {
       font-size: 12px;
-      color: #444;
+      color: #555;
       margin-top: 4px;
+    }
+
+    .item-meta.is-active {
+      color: #7c3aed;
     }
 
     .x-btn {
@@ -179,7 +219,7 @@
       margin-top: auto;
       padding-top: 28px;
       font-size: 12px;
-      color: #333;
+      color: #2a2a2a;
       text-align: center;
       line-height: 1.6;
     }
@@ -187,22 +227,25 @@
 </head>
 <body>
 <div class="app">
-  <h1>Re<span class="accent">mind</span>ers</h1>
-  <p class="subtitle">Stays on your lock screen until you dismiss it</p>
+  <h1>Reminders</h1>
+  <p class="subtitle">Set a time — fires on your lock screen when it's due</p>
 
   <div class="banner" id="banner"></div>
 
   <div class="form">
     <textarea id="input" placeholder="e.g. eat food by 3pm" maxlength="200"></textarea>
-    <button class="add-btn" id="addBtn">Add Reminder</button>
+    <div class="time-row">
+      <label for="timeInput">When</label>
+      <input type="datetime-local" id="timeInput">
+    </div>
+    <button class="add-btn" id="addBtn">Schedule Reminder</button>
   </div>
 
-  <div class="section-label" id="activeLabel" hidden>Active</div>
+  <div class="section-label" id="sectionLabel" hidden>Reminders</div>
   <div class="list" id="list"></div>
 
   <p class="install-hint" id="installHint" hidden>
-    Add this page to your Home Screen for the best experience.<br>
-    Safari → Share → Add to Home Screen
+    Add to Home Screen for reliable background delivery.
   </p>
 </div>
 
@@ -218,21 +261,31 @@ function save(items) {
   localStorage.setItem(STORE, JSON.stringify(items));
 }
 
-function timeStr(ts) {
-  return new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+function toLocalDT(date) {
+  const d = new Date(date);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatWhen(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const targetStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+  if (targetStart === todayStart) return `today at ${time}`;
+  if (targetStart === todayStart + 86400000) return `tomorrow at ${time}`;
+  return d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }) + ` at ${time}`;
 }
 
 function esc(s) {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function render(items) {
   const list = document.getElementById('list');
-  const label = document.getElementById('activeLabel');
+  const label = document.getElementById('sectionLabel');
 
   if (!items.length) {
     label.hidden = true;
@@ -244,43 +297,42 @@ function render(items) {
     return;
   }
 
+  const sorted = [...items].sort((a, b) => a.scheduledTime - b.scheduledTime);
   label.hidden = false;
-  list.innerHTML = items.map(r => `
-    <div class="item" id="r${r.id}">
-      <div class="item-body">
-        <div class="item-text">${esc(r.text)}</div>
-        <div class="item-time">Added ${timeStr(r.createdAt)}</div>
-      </div>
-      <button class="x-btn" data-id="${r.id}" title="Dismiss">✕</button>
-    </div>
-  `).join('');
+
+  list.innerHTML = sorted.map(r => {
+    const isActive = r.status === 'active';
+    return `
+      <div class="item ${isActive ? 'active' : ''}">
+        <div class="item-body">
+          <div class="item-text">${esc(r.text)}</div>
+          <div class="item-meta ${isActive ? 'is-active' : ''}">
+            ${isActive ? '🔔 On your lock screen' : '⏰ ' + formatWhen(r.scheduledTime)}
+          </div>
+        </div>
+        <button class="x-btn" data-id="${r.id}" title="${isActive ? 'Dismiss' : 'Cancel'}">✕</button>
+      </div>`;
+  }).join('');
 }
 
 async function dismiss(id) {
-  try {
-    const reg = await navigator.serviceWorker.ready;
-    const notes = await reg.getNotifications({ tag: id });
-    notes.forEach(n => n.close());
-  } catch {}
+  const items = load();
+  const reminder = items.find(r => r.id === id);
+  if (!reminder) return;
 
-  const items = load().filter(r => r.id !== id);
-  save(items);
-  render(items);
-}
-
-async function syncWithNotifications() {
-  if (!('serviceWorker' in navigator)) { render(load()); return; }
-  try {
-    const reg = await navigator.serviceWorker.ready;
-    const active = await reg.getNotifications();
-    const tags = new Set(active.map(n => n.tag));
-    const items = load();
-    const synced = items.filter(r => tags.has(r.id));
-    if (synced.length !== items.length) save(synced);
-    render(synced.length !== items.length ? synced : items);
-  } catch {
-    render(load());
+  if (reminder.status === 'pending') {
+    navigator.serviceWorker.controller?.postMessage({ type: 'CANCEL', id });
+  } else {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const notes = await reg.getNotifications({ tag: id });
+      notes.forEach(n => n.close());
+    } catch {}
   }
+
+  const updated = items.filter(r => r.id !== id);
+  save(updated);
+  render(updated);
 }
 
 function showBanner(msg, type = 'warn') {
@@ -295,8 +347,20 @@ function hideBanner() {
 
 async function addReminder() {
   const input = document.getElementById('input');
+  const timeInput = document.getElementById('timeInput');
   const text = input.value.trim();
+
   if (!text) { input.focus(); return; }
+
+  const scheduledTime = timeInput.value ? new Date(timeInput.value).getTime() : NaN;
+  if (isNaN(scheduledTime)) {
+    showBanner('Pick a date and time for this reminder.');
+    return;
+  }
+  if (scheduledTime <= Date.now()) {
+    showBanner('Pick a time in the future.');
+    return;
+  }
 
   if (!('serviceWorker' in navigator) || !('Notification' in window)) {
     showBanner('Notifications are not supported in this browser.');
@@ -305,44 +369,72 @@ async function addReminder() {
 
   let perm = Notification.permission;
   if (perm === 'default') perm = await Notification.requestPermission();
-
   if (perm !== 'granted') {
-    showBanner('Notifications are blocked. Enable them in your browser or system settings.');
+    showBanner('Notifications are blocked. Enable them in your browser settings.');
     return;
   }
 
   hideBanner();
 
   const id = Date.now().toString();
+  const reminder = { id, text, scheduledTime, createdAt: Date.now(), status: 'pending' };
+
+  const reg = await navigator.serviceWorker.ready;
+  reg.active?.postMessage({ type: 'SCHEDULE', reminder });
+
+  const items = [...load(), reminder];
+  save(items);
+  render(items);
+
+  input.value = '';
+  showBanner(`Reminder set for ${formatWhen(scheduledTime)}`, 'ok');
+}
+
+async function syncState() {
+  if (!('serviceWorker' in navigator)) { render(load()); return; }
 
   try {
     const reg = await navigator.serviceWorker.ready;
-    await reg.showNotification(text, {
-      requireInteraction: true,
-      tag: id,
-      icon: './icon.svg',
-      badge: './icon.svg',
-      vibrate: [100, 50, 100]
-    });
-  } catch (err) {
-    showBanner('Could not show notification. Try refreshing the page.');
-    return;
-  }
+    const activeNotes = await reg.getNotifications();
+    const activeTags = new Set(activeNotes.map(n => n.tag));
 
-  const items = [...load(), { id, text, createdAt: Date.now() }];
-  save(items);
-  render(items);
-  input.value = '';
-  input.focus();
+    let items = load();
+
+    // Mark fired items as active if their notification is showing
+    items = items.map(r =>
+      r.status === 'pending' && activeTags.has(r.id) ? { ...r, status: 'active' } : r
+    );
+
+    // Drop active items whose notification was dismissed while app was closed
+    items = items.filter(r => r.status !== 'active' || activeTags.has(r.id));
+
+    // Re-send pending reminders to the SW in case it restarted and lost its timers
+    const pending = items.filter(r => r.status === 'pending');
+    if (pending.length > 0 && reg.active) {
+      for (const r of pending) {
+        reg.active.postMessage({ type: 'SCHEDULE', reminder: r });
+      }
+    }
+
+    save(items);
+    render(items);
+  } catch {
+    render(load());
+  }
 }
 
 // Register service worker
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js')
-    .then(() => syncWithNotifications())
+    .then(() => syncState())
     .catch(() => render(load()));
 
   navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data?.type === 'FIRED') {
+      const items = load().map(r => r.id === e.data.id ? { ...r, status: 'active' } : r);
+      save(items);
+      render(items);
+    }
     if (e.data?.type === 'DISMISSED') {
       const items = load().filter(r => r.id !== e.data.id);
       save(items);
@@ -353,7 +445,17 @@ if ('serviceWorker' in navigator) {
   render(load());
 }
 
-// Show install hint when not running as installed PWA
+// Set datetime input defaults
+const minTime = toLocalDT(Date.now());
+const defaultTime = new Date();
+defaultTime.setHours(defaultTime.getHours() + 1);
+defaultTime.setMinutes(Math.ceil(defaultTime.getMinutes() / 15) * 15, 0, 0);
+
+const timeInput = document.getElementById('timeInput');
+timeInput.min = minTime;
+timeInput.value = toLocalDT(defaultTime);
+
+// Show install hint if not running as installed PWA
 if (!window.matchMedia('(display-mode: standalone)').matches && !navigator.standalone) {
   document.getElementById('installHint').hidden = false;
 }
@@ -369,9 +471,8 @@ document.getElementById('list').addEventListener('click', (e) => {
   if (btn) dismiss(btn.dataset.id);
 });
 
-// Sync when returning to the app (catches notifications dismissed while app was closed)
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) syncWithNotifications();
+  if (!document.hidden) syncState();
 });
 </script>
 </body>
