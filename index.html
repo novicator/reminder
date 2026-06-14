@@ -248,7 +248,7 @@
 
 <script>
 // ── Replace this with your actual VAPID public key ──
-const VAPID_PUBLIC_KEY = 'zsVATkabJWxtSd-HnH75r1IwIr4aO2fBvZYFnJPytTU';
+const VAPID_PUBLIC_KEY = 'BD1k4EMdAtylKlbrdaQ-tYCwW2_4fSaD4IJfrICnyntMCzyGcxn-1LtnkjyA2O376FvwmPrb8FHDE0Ch2uuUonU';
 
 const STORE = 'reminders-v1';
 
@@ -402,7 +402,14 @@ async function addReminder() {
   btn.textContent = 'Scheduling…';
 
   try {
-    const subscription = await subscribeToPush();
+    let subscription;
+    try {
+      subscription = await subscribeToPush();
+    } catch (err) {
+      showBanner(`Push subscription failed: ${err.message}`);
+      return;
+    }
+
     const id = Date.now().toString();
 
     const response = await fetch('/api/schedule', {
@@ -411,7 +418,10 @@ async function addReminder() {
       body: JSON.stringify({ id, text, scheduledTime, subscription }),
     });
 
-    if (!response.ok) throw new Error('Server error');
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(`${response.status}: ${errData.error || 'unknown error'}`);
+    }
 
     const { messageId } = await response.json();
     const reminder = { id, text, scheduledTime, createdAt: Date.now(), status: 'pending', messageId };
@@ -423,7 +433,7 @@ async function addReminder() {
     input.value = '';
     showBanner(`Reminder set for ${formatWhen(scheduledTime)}`, 'ok');
   } catch (err) {
-    showBanner('Failed to schedule. Check your connection and try again.');
+    showBanner(`Failed: ${err.message}`);
     console.error(err);
   } finally {
     btn.disabled = false;
