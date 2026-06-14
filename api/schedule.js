@@ -1,3 +1,5 @@
+const { Client } = require('@upstash/qstash');
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
@@ -11,27 +13,17 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'Time must be in the future' });
   }
 
-  const sendUrl = 'https://reminder-kappa-eight.vercel.app/api/send';
-  const notBefore = Math.floor(scheduledTime / 1000);
+  try {
+    const client = new Client({ token: process.env.QSTASH_TOKEN });
 
-  const response = await fetch(
-    `https://qstash.upstash.io/v2/publish/${encodeURIComponent(sendUrl)}`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.QSTASH_TOKEN}`,
-        'Content-Type': 'application/json',
-        'Upstash-Not-Before': String(notBefore),
-      },
-      body: JSON.stringify({ id, text, subscription }),
-    }
-  );
+    const result = await client.publishJSON({
+      url: 'https://reminder-kappa-eight.vercel.app/api/send',
+      body: { id, text, subscription },
+      notBefore: Math.floor(scheduledTime / 1000),
+    });
 
-  const data = await response.json();
-
-  if (!response.ok) {
-    return res.status(500).json({ error: 'QStash error', status: response.status, details: data });
+    res.status(200).json({ messageId: result.messageId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-
-  res.status(200).json({ messageId: data.messageId });
 };
